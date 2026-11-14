@@ -77,6 +77,7 @@ def all_metrics(X, y, yhat, s, scores=None, seed: int = 0) -> dict:
     if scores is not None and len(np.unique(y)) == 2:
         out["auc"] = float(roc_auc_score(y, scores))
         out.update(generalized_rates(y, scores, s))
+    out.update(group_rates(y, yhat, s))
     return out
 
 

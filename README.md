@@ -8,6 +8,8 @@ before and after mitigation.
 
 Built as the final assignment for Data Wrangling (INFOMDW).
 
+**Start here: [`notebooks/pipeline.ipynb`](notebooks/pipeline.ipynb)** runs the full pipeline on all three datasets and shows every table and plot. The implementation is in `src/fair_credit/`; `run.py` runs single configurations from the command line.
+
 ## Method in one paragraph
 
 Train a classifier that outputs calibrated scores. For each group, compute a generalized
@@ -62,21 +64,36 @@ Each run writes to `results/`:
 2. Compute DP_Diff, DIR and consistency on the original labels.
 3. Stratified split on label × group: 60% train, 20% validation, 20% test.
 4. Train the base classifier on train (baseline).
-5. Fit Calibrated Equalized Odds on validation scores, apply it to test scores.
-6. On test: DP_Diff, DIR, consistency, accuracy, balanced accuracy, AUC, TPR/FPR gaps,
+5. Choose the decision cutoff on the validation set by maximising TPR − FPR (Youden's J). A fixed 0.5 cutoff approves almost everyone on imbalanced credit data.
+6. Fit Calibrated Equalized Odds on validation scores, apply it to test scores.
+7. On test: DP_Diff, DIR, consistency, accuracy, balanced accuracy, AUC, TPR/FPR gaps,
    approval rate and default rate among approved per group, for baseline and mitigated.
-7. Repeat over seeds and report mean and standard deviation.
+8. Repeat over seeds and report mean and standard deviation.
 
 ## Metric definitions
 
 - **DP_Diff** = P(ŷ = 1 | unprivileged) − P(ŷ = 1 | privileged); fair at 0.
 - **DIR** = P(ŷ = 1 | unprivileged) / P(ŷ = 1 | privileged); fair at 1, acceptable 0.8 to 1.25.
+- **Generalised FNR / FPR gap**: the error rates the method actually equalises, computed from scores: mean of (1 − score) over repayers, and mean score over defaulters, per group (unprivileged minus privileged).
 - **Consistency** = 1 − mean |ŷᵢ − mean ŷ of i's 5 nearest neighbours|, on standardised features.
   On data above 20,000 rows a fixed random subsample is used (same seed before and after).
 
 ## Results
 
-_To be filled in._
+Main configuration: logistic regression, `fnr` constraint, 5 seeds (mean over seeds; full tables in the notebook and `figures/`).
+
+| Dataset | DIR labels | DIR before → after | Balanced acc. before → after | Targeted gap (gen. FNR) before → after | Other gap (gen. FPR) before → after |
+|---|---|---|---|---|---|
+| German | 0.79 | 0.74 → 0.48* | 0.70 → 0.54 | 0.101 → 0.044 | −0.006 → −0.228 |
+| Taiwan | 1.04 | 1.04 → 1.21 | 0.69 → 0.63 | −0.013 → −0.000 | 0.017 → 0.086 |
+| Home Credit | 1.04 | 1.16 → 1.38 | 0.68 → 0.64 | −0.013 → −0.014 | 0.019 → 0.047 |
+
+\* mean over 3 of 5 seeds; in the other two no older applicant was approved, so DIR is undefined.
+
+- Calibrated Equalized Odds does not target demographic parity, and DIR moves away from 1 on all three datasets.
+- On Taiwan the targeted gap closes almost exactly and the other gap grows about fivefold: the trade-off the paper predicts.
+- On German, the scores of all older applicants are replaced by their base rate. Whether the whole group is then approved or rejected depends on which side of the cutoff that base rate falls in a given split.
+- On Home Credit the targeted gap does not move; the feasibility table in the notebook checks whether this is the paper's infeasible case.
 
 ## Limitations
 
