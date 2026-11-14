@@ -14,16 +14,16 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
-logging.getLogger().setLevel(logging.ERROR)  # hide AIF360's optional-dependency notices
+logging.getLogger().setLevel(logging.ERROR) 
 
-from fair_credit.data import LOADERS, load  # noqa: E402
-from fair_credit.metrics import label_metrics  # noqa: E402
-from fair_credit.pipeline import run_once  # noqa: E402
-from fair_credit.plots import reliability  # noqa: E402
+from fair_credit.data import LOADERS, load  
+from fair_credit.metrics import label_metrics  
+from fair_credit.pipeline import run_once 
+from fair_credit.plots import reliability  
 
 SHOW = ["dp_diff", "dir", "consistency", "accuracy", "balanced_accuracy", "auc",
         "tpr_gap", "fpr_gap", "approval_priv", "approval_unpriv",
-        "default_among_approved_priv", "default_among_approved_unpriv"]
+        "default_among_approved_priv", "default_among_approved_unpriv", "threshold"]
 
 
 def main():
@@ -58,14 +58,14 @@ def main():
     res = pd.DataFrame(rows)
     res.to_csv(out / f"{tag}_runs.csv", index=False)
     cols = [c for c in SHOW if c in res.columns]
-    summary = res.groupby("stage")[cols].agg(["mean", "std"]).T.unstack()
+    summary = res.groupby("stage")[cols].agg(["mean", "std", "count"]).T.unstack()
     summary.to_csv(out / f"{tag}_summary.csv")
     pd.Series(labels).to_csv(out / f"{tag}_labels.csv", header=["value"])
 
     print(f"\nTest set, mean over {args.seeds} seeds (std in brackets):")
     for c in cols:
         b, m = res[res.stage == "baseline"][c], res[res.stage == "ceo"][c]
-        print(f"  {c:32s} baseline {b.mean():7.4f} ({b.std():.4f})   ceo {m.mean():7.4f} ({m.std():.4f})")
+        print(f"  {c:32s} baseline {b.mean():7.4f} ({b.std():.4f})   ceo {m.mean():7.4f} ({m.std():.4f}) n = {m.count()}")
     print(f"\nSaved to {out}/{tag}_*")
 
 
