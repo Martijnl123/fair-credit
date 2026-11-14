@@ -53,6 +53,18 @@ def group_rates(y, yhat, s) -> dict:
     out["fpr_gap"] = out["fpr_unpriv"] - out["fpr_priv"]
     return out
 
+def generalized_rates(y, scores, s) -> dict:
+    """Generalised FNR and FPR per group, computed from scores instead of decisions."""
+    out = {}
+    for g, tag in [(1, "priv"), (0, "unpriv")]:
+        m = s == g
+        yt, sc = y[m], scores[m]
+        out[f"gfnr_{tag}"] = float(np.mean(1 - sc[yt == 1]))   # doubt placed on repayers
+        out[f"gfpr_{tag}"] = float(np.mean(sc[yt == 0]))       # trust given to defaulters
+    out["gfnr_gap"] = out["gfnr_unpriv"] - out["gfnr_priv"]
+    out["gfpr_gap"] = out["gfpr_unpriv"] - out["gfpr_priv"]
+    return out
+
 
 def all_metrics(X, y, yhat, s, scores=None, seed: int = 0) -> dict:
     out = {
@@ -64,7 +76,7 @@ def all_metrics(X, y, yhat, s, scores=None, seed: int = 0) -> dict:
     }
     if scores is not None and len(np.unique(y)) == 2:
         out["auc"] = float(roc_auc_score(y, scores))
-    out.update(group_rates(y, yhat, s))
+        out.update(generalized_rates(y, scores, s))
     return out
 
 

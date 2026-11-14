@@ -21,9 +21,9 @@ from fair_credit.metrics import label_metrics
 from fair_credit.pipeline import run_once 
 from fair_credit.plots import reliability  
 
-SHOW = ["dp_diff", "dir", "consistency", "accuracy", "balanced_accuracy", "auc",
-        "tpr_gap", "fpr_gap", "approval_priv", "approval_unpriv",
-        "default_among_approved_priv", "default_among_approved_unpriv", "threshold"]
+SHOW = ["threshold", "dp_diff", "dir", "consistency", "accuracy", "balanced_accuracy", "auc",
+        "tpr_gap", "fpr_gap", "gfnr_gap", "gfpr_gap", "approval_priv", "approval_unpriv",
+        "default_among_approved_priv", "default_among_approved_unpriv"]
 
 
 def main():
