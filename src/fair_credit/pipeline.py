@@ -11,6 +11,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_curve
+
 
 from .data import Dataset
 from .metrics import all_metrics
@@ -49,12 +51,18 @@ def _bld(y, s, scores=None) -> BinaryLabelDataset:
         d.scores = np.asarray(scores, dtype=float).reshape(-1, 1)
     return d
 
+def choose_threshold(y, p):
+    """Cutoff that maximises TPR - FPR (Youden's J) on the given labels and scores."""
+    fpr, tpr, thresholds = roc_curve(y, p)
+    best = np.argmax(tpr - fpr)
+    return float(thresholds[best])
 
-def run_once(ds: Dataset, model: str, constraint: str, seed: int, threshold: float = 0.5):
+def run_once(ds: Dataset, model: str, constraint: str, seed: int):
     tr, va, te = split(ds, seed)
     X = ds.X.to_numpy()
     clf = make_model(model, seed).fit(X[tr], ds.y[tr])
     p_va, p_te = clf.predict_proba(X[va])[:, 1], clf.predict_proba(X[te])[:, 1]
+    threshold = choose_threshold(ds.y[va], p_va)  
 
     yhat_base = (p_te >= threshold).astype(int)
     base = all_metrics(X[te], ds.y[te], yhat_base, ds.s[te], scores=p_te, seed=seed)
@@ -64,6 +72,7 @@ def run_once(ds: Dataset, model: str, constraint: str, seed: int, threshold: flo
     out = ceo.predict(_bld((p_te >= threshold).astype(int), ds.s[te], p_te), threshold=threshold)
     yhat_ceo, p_ceo = out.labels.ravel().astype(int), out.scores.ravel()
     mitig = all_metrics(X[te], ds.y[te], yhat_ceo, ds.s[te], scores=p_ceo, seed=seed)
+    base["threshold"] = mitig["threshold"] = threshold
 
     curves = {"y": ds.y[te], "s": ds.s[te], "p_base": p_te, "p_ceo": p_ceo}
     return base, mitig, curves
