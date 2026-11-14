@@ -1,4 +1,0 @@
-dataset,degraded group,its cost,its trivial cost,other group's cost,feasible
-german,privileged,0.2148,0.2716,0.3158,False
-taiwan,unprivileged,0.1837,0.2078,0.1966,True
-homecredit,unprivileged,0.0705,0.07,0.084,False

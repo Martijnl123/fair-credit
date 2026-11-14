@@ -7,25 +7,28 @@ from aif360.algorithms.postprocessing import CalibratedEqOddsPostprocessing
 from aif360.datasets import BinaryLabelDataset
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_curve
 
-
 from .data import Dataset
-from .metrics import all_metrics
+from .metrics import all_metrics, consistency, generalized_rates
 
 PRIV, UNPRIV = [{"s": 1}], [{"s": 0}]
 
 
 def make_model(name: str, seed: int):
     if name == "lr":
-        return make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000))
+        # Imputation is part of the model, so its medians are learned on the training split only.
+        return make_pipeline(SimpleImputer(strategy="median"), StandardScaler(),
+                             LogisticRegression(max_iter=2000))
     if name == "gbm":
         # Boosted trees are often miscalibrated, and the method assumes calibrated scores,
         # so wrap them in isotonic calibration (cross-validated on the training set).
+        # Gradient boosting handles missing values natively, so no imputer is needed.
         gbm = HistGradientBoostingClassifier(random_state=seed)
         return CalibratedClassifierCV(gbm, method="isotonic", cv=5)
     raise ValueError(f"Unknown model {name!r}. Choose 'lr' or 'gbm'.")
@@ -57,6 +60,25 @@ def choose_threshold(y, p):
     best = np.argmax(tpr - fpr)
     return float(thresholds[best])
 
+def feasibility(y, scores, s, constraint: str) -> dict:
+    """Section 4 of Pleiss et al.: the group with the lower cost is degraded towards its
+    constant base-rate classifier, the worst calibrated classifier it can have. The constraint
+    is reachable only if the other group's cost is at most that trivial cost. Computed on the
+    same (validation) data the post-processor is fitted on. Only for "fnr" and "fpr"."""
+    if constraint not in ("fnr", "fpr"):
+        return {}
+    g = generalized_rates(y, scores, s)
+    cost = {t: g[f"g{constraint}_{t}"] for t in ("priv", "unpriv")}
+    mu = {"priv": float(y[s == 1].mean()), "unpriv": float(y[s == 0].mean())}
+    trivial = {t: (1 - mu[t]) if constraint == "fnr" else mu[t] for t in mu}
+    low = min(cost, key=cost.get); high = "unpriv" if low == "priv" else "priv"
+    return {"degraded_is_priv": float(low == "priv"),
+            "cost_degraded": cost[low], "trivial_cost_degraded": trivial[low],
+            "cost_other": cost[high],
+            "headroom": trivial[low] - cost[low],     # <= 0 breaks the calibration assumption
+            "feasible": float(cost[high] <= trivial[low])}
+
+
 def run_once(ds: Dataset, model: str, constraint: str, seed: int):
     tr, va, te = split(ds, seed)
     X = ds.X.to_numpy()
@@ -73,6 +95,16 @@ def run_once(ds: Dataset, model: str, constraint: str, seed: int):
     yhat_ceo, p_ceo = out.labels.ravel().astype(int), out.scores.ravel()
     mitig = all_metrics(X[te], ds.y[te], yhat_ceo, ds.s[te], scores=p_ceo, seed=seed)
     base["threshold"] = mitig["threshold"] = threshold
+
+    # Diagnostics for the report
+    lab_cons = consistency(X[te], ds.y[te], seed=seed)          # labels, same test rows
+    base["consistency_labels_test"] = mitig["consistency_labels_test"] = lab_cons
+    # Share of each group whose score is replaced by its base rate. AIF360 does not clip
+    # this: above 1 means everyone is replaced, below 0 means nobody is.
+    mitig["mix_rate_priv"] = float(ceo.priv_mix_rate)
+    mitig["mix_rate_unpriv"] = float(ceo.unpriv_mix_rate)
+    mitig.update({f"val_{k}": v for k, v in
+                  feasibility(ds.y[va], p_va, ds.s[va], constraint).items()})
 
     curves = {"y": ds.y[te], "s": ds.s[te], "p_base": p_te, "p_ceo": p_ceo}
     return base, mitig, curves

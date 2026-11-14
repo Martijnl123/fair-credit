@@ -32,6 +32,8 @@ def consistency(X, yhat, k: int = 5, max_rows: int = 20_000, seed: int = 0) -> f
     if len(yhat) > max_rows:
         idx = np.random.default_rng(seed).choice(len(yhat), max_rows, replace=False)
         X, yhat = X[idx], yhat[idx]
+    if np.isnan(X).any():  # evaluation only: fill with medians of these rows
+        X = np.where(np.isnan(X), np.nanmedian(X, axis=0), X)
     Xs = StandardScaler().fit_transform(X)
     # k + 1 neighbours, then drop the point itself (AIF360 keeps it; difference is small)
     _, nn = NearestNeighbors(n_neighbors=k + 1).fit(Xs).kneighbors(Xs)
@@ -66,6 +68,15 @@ def generalized_rates(y, scores, s) -> dict:
     return out
 
 
+def ece(y, scores, bins: int = 10) -> float:
+    """Expected calibration error: weighted mean gap between predicted and observed
+    repayment rate over equal-width score bins. 0 = perfectly calibrated."""
+    y, scores = np.asarray(y, float), np.clip(np.asarray(scores, float), 0, 1)
+    idx = np.minimum((scores * bins).astype(int), bins - 1)
+    return float(sum(abs(y[idx == b].mean() - scores[idx == b].mean()) * (idx == b).mean()
+                     for b in range(bins) if (idx == b).any()))
+
+
 def all_metrics(X, y, yhat, s, scores=None, seed: int = 0) -> dict:
     out = {
         "dp_diff": dp_diff(yhat, s),
@@ -77,10 +88,12 @@ def all_metrics(X, y, yhat, s, scores=None, seed: int = 0) -> dict:
     if scores is not None and len(np.unique(y)) == 2:
         out["auc"] = float(roc_auc_score(y, scores))
         out.update(generalized_rates(y, scores, s))
+        out["ece_priv"] = ece(y[s == 1], scores[s == 1])
+        out["ece_unpriv"] = ece(y[s == 0], scores[s == 0])
     out.update(group_rates(y, yhat, s))
     return out
 
 
 def label_metrics(X, y, s, seed: int = 0) -> dict:
-    """Task 2 step 2: fairness of the original labels, before any model."""
+    """Fairness of the original labels, before any model is trained."""
     return {"dp_diff": dp_diff(y, s), "dir": dir_ratio(y, s), "consistency": consistency(X, y, seed=seed)}

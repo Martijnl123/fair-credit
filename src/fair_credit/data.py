@@ -82,7 +82,8 @@ def load_homecredit(path: Path | None = None, max_missing: float = 0.4) -> Datas
     df = df.loc[:, df.isna().mean() <= max_missing]
     df["DAYS_EMPLOYED"] = df["DAYS_EMPLOYED"].replace(365243, np.nan)  # known sentinel value
     X = _one_hot(df)
-    X = X.fillna(X.median(numeric_only=True))
+    # Missing values stay NaN here; they are imputed inside the model pipeline,
+    # with medians learned on the training split only (no leakage into test).
     return Dataset("homecredit", X.astype(float), y, s, "sex", "male", "female")
 
 
